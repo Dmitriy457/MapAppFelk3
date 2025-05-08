@@ -103,5 +103,7 @@ const [notifiedMarkers, setNotifiedMarkers] = useState([]); // состояни�
 
 # Видео работы приложения
 
+https://github.com/user-attachments/assets/02cdaccc-03b7-4fe7-b8e0-4990ef13f91a
+
 
 
