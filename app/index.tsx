@@ -23,15 +23,15 @@ export default function App() {
   const [currentLocation, setCurrentLocation] = useState(null); // состояние для хранения текущей геолокации
   const [notifiedMarkers, setNotifiedMarkers] = useState([]); // состояние для хранения маркеров, для которых уже были отправлены уведомления
   
-  const { addMarker, getMarkers, deleteMarker} = useDatabase();
-  const router = useRouter()
+  const { addMarker, getMarkers, deleteMarker} = useDatabase(); // импортируем функции из контекста для работы с базой данных
+  const router = useRouter() // используем роутер для навигации между экранами
 
 
   // Запрашиваем разрешение на отправку уведомлений при первом запуске приложения
   useEffect(() => {
     const requestNotificationPermission = async () => {
       const { status } = await Notifications.requestPermissionsAsync();
-      if (status !== 'granted') {
+      if (status !== 'granted') { // если разрешение не получено, выводим сообщение об ошибке
         Alert.alert('Ошибка', 'Разрешение на отправку уведомлений отклонено');
       }
     };
@@ -130,13 +130,13 @@ export default function App() {
     if (!currentLocation || markers.length === 0) return; // если нет текущей геолокации или маркеров, выходим
 
     markers.forEach(async marker => {
-      const distance = haversine(
+      const distance = haversine( // считаем растояние между текущей геолокацией и маркером
         { latitude: currentLocation.latitude, longitude: currentLocation.longitude },
         { latitude: marker.latitude, longitude: marker.longitude }
       );
 
-      if (distance < 0.05 && !notifiedMarkers.includes(marker.id)) { // если расстояние меньше 50 метров (0.05 км)
-        await Notifications.scheduleNotificationAsync({
+      if (distance < 0.05 && !notifiedMarkers.includes(marker.id)) { // если расстояние меньше 50 метров и уведомление для данного маркера еще не отправлено
+        await Notifications.scheduleNotificationAsync({ // отправляем уведомление
           content: {
             title: 'Вы рядом с маркером!',
             body: `Маркер: ${JSON.stringify(marker)}`,
@@ -146,13 +146,13 @@ export default function App() {
         console.log(`Вы находитесь рядом с маркером: ${JSON.stringify(marker)}`);
         setNotifiedMarkers((prev) => [...prev, marker.id]); // добавляем id маркера в список уведомленных маркеров
       } else if (distance >= 0.05 && notifiedMarkers.includes(marker.id)) { // если пользователь покинул зону
-        setNotifiedMarkers((prev) => prev.filter((id) => id !== marker.id)); // удаляем маркер из списка
+        setNotifiedMarkers((prev) => prev.filter((id) => id !== marker.id)); // удаляем маркер из списка уведомленных маркеров
       }
     });
   }, [currentLocation, markers, notifiedMarkers]); // зависимость от текущей геолокации и маркеров
 
-  
-
+ 
+  // отображаем карту с маркерами и текущей геолокацией
   return (
     <View style={styles.container}>
       <MapView style={styles.map}
@@ -160,7 +160,6 @@ export default function App() {
         onLongPress={handleLongPress}
         showsUserLocation={true}
         loadMarkers={true}
-        
       >
         {markersRendered}
       </MapView>
