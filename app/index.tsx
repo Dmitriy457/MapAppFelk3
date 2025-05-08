@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { StyleSheet, View, Alert } from "react-native";
+import { StyleSheet, View, Alert, Linking } from "react-native";
 import MapView, { Marker } from "react-native-maps";
 import { useRouter } from 'expo-router';
 import { useDatabase } from '@/contexts/DatabaseContext'; 
@@ -22,22 +22,47 @@ export default function App() {
 
   const [currentLocation, setCurrentLocation] = useState(null); // состояние для хранения текущей геолокации
   const [notifiedMarkers, setNotifiedMarkers] = useState([]); // состояние для хранения маркеров, для которых уже были отправлены уведомления
-  
-  const { addMarker, getMarkers, deleteMarker} = useDatabase(); // импортируем функции из контекста для работы с базой данных
-  const router = useRouter() // используем роутер для навигации между экранами
+  const [notificationIds, setNotificationIds] = useState([]); // состояние для хранения id уведомлений
 
+  const { addMarker, getMarkers, deleteMarker} = useDatabase();
+  const router = useRouter()
 
-  // Запрашиваем разрешение на отправку уведомлений при первом запуске приложения
+  // Запрашиваем разрешения на уведомления и геолокацию
   useEffect(() => {
-    const requestNotificationPermission = async () => {
+    const checkNotificationPermission = async () => {
       const { status } = await Notifications.requestPermissionsAsync();
-      if (status !== 'granted') { // если разрешение не получено, выводим сообщение об ошибке
-        Alert.alert('Ошибка', 'Разрешение на отправку уведомлений отклонено');
+      if (status !== 'granted') {
+        Alert.alert(
+          'Разрешение на уведомления',
+          'Приложению требуется разрешение на отправку уведомлений. Вы можете включить его в настройках устройства.',
+          [
+            { text: 'Отмена', style: 'cancel' },
+            { text: 'Открыть настройки', onPress: () => Linking.openSettings() },
+          ]
+        );
       }
     };
-    requestNotificationPermission();
+    checkNotificationPermission();
   }, []);
 
+  useEffect(() => {
+    const checkLocationPermission = async () => {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert(
+          'Разрешение на геолокацию',
+          'Приложению требуется разрешение на доступ к геолокации. Вы можете включить его в настройках устройства.',
+          [
+            { text: 'Отмена', style: 'cancel' },
+            { text: 'Открыть настройки', onPress: () => Linking.openSettings() },
+          ]
+        );
+      }
+    };
+
+    checkLocationPermission();
+  }, []);
+  
 
   // Настройка обработчика уведомлений
   useEffect(() => {
@@ -112,6 +137,15 @@ export default function App() {
       await deleteMarker(markerId); // Удаляем маркер из базы данных
       setMarkers(markers.filter((_, index) => index !== existingMarkerIndex)); // обновляем состояние маркеров
       setNotifiedMarkers((prev) => prev.filter((id) => id !== markerId)); // удаляем маркер из списка уведомленных маркеров
+    
+      if (notificationIds[markerId]) { // если маркер есть в списке уведомлений
+        await Notifications.cancelScheduledNotificationAsync(notificationIds[markerId]); // отменяем уведомление
+        setNotificationIds((prev) => {
+          const newIds = { ...prev }; // создаем новый объект для обновления состояния
+          delete newIds[markerId]; // удаляем id уведомления из объекта
+          return newIds; // обновляем состояние
+        });
+      }
     }
   };
 
@@ -121,7 +155,9 @@ export default function App() {
 
   // отрисовка маркеров на карте
   const markersRendered = markers.map((elem, idx) => (
-    <Marker coordinate={elem} key={idx}
+    <Marker 
+      coordinate={elem} 
+      key={idx}
       onPress={() => handleMarkerPress(elem)}
     />
   ));
@@ -130,13 +166,13 @@ export default function App() {
     if (!currentLocation || markers.length === 0) return; // если нет текущей геолокации или маркеров, выходим
 
     markers.forEach(async marker => {
-      const distance = haversine( // считаем растояние между текущей геолокацией и маркером
+      const distance = haversine(
         { latitude: currentLocation.latitude, longitude: currentLocation.longitude },
         { latitude: marker.latitude, longitude: marker.longitude }
       );
 
-      if (distance < 0.05 && !notifiedMarkers.includes(marker.id)) { // если расстояние меньше 50 метров и уведомление для данного маркера еще не отправлено
-        await Notifications.scheduleNotificationAsync({ // отправляем уведомление
+      if (distance < 0.05 && !notifiedMarkers.includes(marker.id)) { // если расстояние меньше 50 метров (0.05 км)
+        await Notifications.scheduleNotificationAsync({
           content: {
             title: 'Вы рядом с маркером!',
             body: `Маркер: ${JSON.stringify(marker)}`,
@@ -146,13 +182,22 @@ export default function App() {
         console.log(`Вы находитесь рядом с маркером: ${JSON.stringify(marker)}`);
         setNotifiedMarkers((prev) => [...prev, marker.id]); // добавляем id маркера в список уведомленных маркеров
       } else if (distance >= 0.05 && notifiedMarkers.includes(marker.id)) { // если пользователь покинул зону
-        setNotifiedMarkers((prev) => prev.filter((id) => id !== marker.id)); // удаляем маркер из списка уведомленных маркеров
+        if (notificationIds[marker.id]) {  // если маркер есть в списке уведомлений
+          await Notifications.cancelScheduledNotificationAsync(notificationIds[marker.id]); // отменяем уведомление
+          console.log(`Уведомление удалено для маркера: ${marker.id}`);
+          setNotificationIds((prev) => {
+            const newIds = { ...prev }; // создаем новый объект для обновления состояния
+            delete newIds[marker.id]; // удаляем id уведомления из объекта
+            return newIds; // обновляем состояние
+          });
+        }
+        setNotifiedMarkers((prev) => prev.filter((id) => id !== marker.id)); // удаляем маркер из списка
       }
     });
   }, [currentLocation, markers, notifiedMarkers]); // зависимость от текущей геолокации и маркеров
 
- 
-  // отображаем карту с маркерами и текущей геолокацией
+  
+
   return (
     <View style={styles.container}>
       <MapView style={styles.map}
